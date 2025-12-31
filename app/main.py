@@ -78,9 +78,11 @@ def create_app() -> FastAPI:
     # Register routes
     from src.api.chat import router as chat_router
     from src.api.health import router as health_router
+    from src.api.ingestion import router as ingestion_router
 
     app.include_router(health_router, prefix="/health", tags=["Health"])
     app.include_router(chat_router, prefix="/chat", tags=["Chat"])
+    app.include_router(ingestion_router, prefix="/ingestion", tags=["Ingestion"])
 
     logger.info("FastAPI application created", debug=settings.app_debug)
 

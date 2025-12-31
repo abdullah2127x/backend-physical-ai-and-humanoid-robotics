@@ -6,7 +6,7 @@ for optimal RAG retrieval performance.
 """
 
 import re
-from typing import Iterator, list
+from collections.abc import Iterator
 
 
 class TextChunker:
