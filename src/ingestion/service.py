@@ -7,6 +7,7 @@ Coordinates file discovery, processing, chunking, embedding, and storage.
 import asyncio
 import hashlib
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from uuid import UUID, uuid4
@@ -57,6 +58,7 @@ class IngestionService:
         source_path: str,
         recursive: bool = True,
         clear_existing: bool = False,
+        report_id: Optional[UUID] = None,
     ) -> IngestionReport:
         """
         Run the full ingestion pipeline.
@@ -65,17 +67,24 @@ class IngestionService:
             source_path: Path to file or directory
             recursive: Scan subdirectories
             clear_existing: Clear Qdrant collection first
+            report_id: Optional existing report ID to use/update
 
         Returns:
             IngestionReport with summary
         """
-        report = IngestionReport(
-            id=uuid4(),
-            source_path=source_path,
-            started_at=time.time(),
-            status=DocumentStatus.PROCESSING,
-        )
-        self._reports[report.id] = report
+        # Use existing report or create new one
+        if report_id and report_id in self._reports:
+            report = self._reports[report_id]
+            report.started_at = datetime.utcnow()
+            report.status = DocumentStatus.PROCESSING
+        else:
+            report = IngestionReport(
+                id=report_id or uuid4(),
+                source_path=source_path,
+                started_at=datetime.utcnow(),
+                status=DocumentStatus.PROCESSING,
+            )
+            self._reports[report.id] = report
 
         start_time = time.time()
 
@@ -90,9 +99,14 @@ class IngestionService:
                 logger.info("Clearing existing collection")
                 try:
                     await self._qdrant.delete_collection()
-                    await self._qdrant.ensure_collection()
                 except Exception as e:
                     logger.warning("Failed to clear collection", error=str(e))
+
+            # Ensure collection exists (create if not)
+            try:
+                await self._qdrant.ensure_collection()
+            except Exception as e:
+                logger.warning("Failed to ensure collection", error=str(e))
 
             # Scan for files
             files = scan_directory(path, recursive=recursive)

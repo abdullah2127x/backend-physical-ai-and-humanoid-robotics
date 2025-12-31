@@ -12,6 +12,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 from pydantic import UUID4
 
 from src.ingestion.models import (
+    DocumentStatus,
     IngestionRequest,
     IngestionReport,
     IngestionStatusResponse,
@@ -26,16 +27,29 @@ _running_ingestions: dict[UUID, asyncio.Task] = {}
 
 async def run_ingestion_task(report_id: UUID, request: IngestionRequest) -> None:
     """Background task for ingestion."""
+    import structlog
+
+    logger = structlog.get_logger(__name__)
+    from src.core.config import get_settings
+
     service = get_ingestion_service()
+    settings = get_settings()
+
+    # Resolve path relative to content root
+    content_root = settings.content_root
+    full_path = content_root / request.path
+
+    logger.info("Ingestion task starting", report_id=str(report_id), request_path=request.path, content_root=str(content_root), full_path=str(full_path), exists=full_path.exists())
+
     try:
         await service.ingest(
-            source_path=request.path,
+            source_path=str(full_path),
             recursive=request.recursive,
             clear_existing=request.clear_existing,
+            report_id=report_id,
         )
     except Exception as e:
-        logger = asyncio.get_event_loop()
-        logger.error(f"Ingestion failed: {e}")
+        logger.error("Ingestion failed", error=str(e), full_path=str(full_path))
 
 
 @router.post(
@@ -66,7 +80,7 @@ async def start_ingestion(
         source_path=request.path,
         total_files=0,
         processed_files=0,
-        status=status.HTTP_202_ACCEPTED,
+        status=DocumentStatus.PROCESSING,
     )
 
     # Start ingestion in background
@@ -78,7 +92,7 @@ async def start_ingestion(
 
     return IngestionStatusResponse(
         report_id=report.id,
-        status=status.HTTP_202_ACCEPTED,
+        status=DocumentStatus.PROCESSING,
         progress={
             "total": 0,
             "processed": 0,

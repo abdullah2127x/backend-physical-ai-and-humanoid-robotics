@@ -87,14 +87,24 @@ class QdrantWrapper:
         if self._client is None:
             raise RuntimeError("Not connected to Qdrant")
 
+        # Ensure collection exists before upserting
+        try:
+            await self.ensure_collection()
+        except Exception as e:
+            logger.warning("Failed to ensure collection", error=str(e))
+
         # Process in batches
         for i in range(0, len(points), batch_size):
             batch = points[i : i + batch_size]
-            await self._client.upsert(
-                collection_name=self._collection_name,
-                points=batch,
-            )
-            logger.debug("Upserted batch", batch_size=len(batch))
+            try:
+                await self._client.upsert(
+                    collection_name=self._collection_name,
+                    points=batch,
+                )
+                logger.debug("Upserted batch", batch_size=len(batch))
+            except Exception as e:
+                logger.error("Failed to upsert batch", error=str(e))
+                raise
 
     async def search(
         self,

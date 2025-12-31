@@ -154,7 +154,7 @@ def get_chunker(
     """Get the global chunker instance with optional overrides."""
     global _chunker
     if _chunker is None:
-        from .config import get_settings
+        from src.core.config import get_settings
 
         settings = get_settings()
         _chunker = TextChunker(
