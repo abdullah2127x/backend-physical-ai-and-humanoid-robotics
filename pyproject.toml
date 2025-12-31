@@ -1,7 +1,87 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
-name = "backend-physical-ai-and-humanoid-robotics"
+name = "rag_chatbot"
 version = "0.1.0"
-description = "Add your description here"
+description = "RAG Chatbot Backend - Ask questions about book content with contextual answers"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+license = { text = "MIT" }
+authors = [
+    { name = "Hackathon Team" }
+]
+
+# Core dependencies
+dependencies = [
+    # Web Framework
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+
+    # Configuration & Validation
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.6.0",
+    "python-dotenv>=1.0.1",
+
+    # Vector Database
+    "qdrant-client>=1.12.0",
+
+    # Embeddings
+    "cohere>=5.9.0",
+
+    # LLM Integration
+    "litellm>=1.44.0",
+
+    # Async HTTP
+    "httpx>=0.28.0",
+
+    # Logging
+    "structlog>=25.0.0",
+
+    # Utilities
+    "python-multipart>=0.0.20",
+]
+
+[project.optional-dependencies]
+# Development dependencies
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "httpx>=0.28.0",
+    "ruff>=0.8.0",
+    "mypy>=1.14.0",
+]
+
+# Testing
+test = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "httpx>=0.28.0",
+    "pytest-cov>=6.0.0",
+]
+
+# Build configuration - tell hatchling where packages are
+[tool.hatch.build.targets.wheel]
+packages = ["app", "src"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true

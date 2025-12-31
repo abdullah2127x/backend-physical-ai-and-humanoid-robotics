@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(python:*)",
-      "WebFetch(domain:api.pksol.com)"
+      "WebFetch(domain:api.pksol.com)",
+      "Bash(curl:*)"
     ]
   }
 }
