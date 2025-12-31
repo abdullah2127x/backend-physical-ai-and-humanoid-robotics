@@ -1,0 +1,99 @@
+openapi: 3.0.3
+info:
+  title: RAG Chatbot Backend API
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8000/v1
+    description: Local development
+
+tags:
+  - name: Health
+  - name: Ingestion
+  - name: Chat
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      tags: [Health]
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string}
+
+  /ingestion/start:
+    post:
+      summary: Start ingestion
+      tags: [Ingestion]
+      security: [ApiKeyAuth: []]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [folder_path]
+              properties:
+                folder_path: {type: string}
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  report_id: {type: string}
+
+  /chat/start:
+    post:
+      summary: Start session
+      tags: [Chat]
+      security: [ApiKeyAuth: []]
+      responses:
+        201:
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id: {type: string}
+
+  /chat/send/{session_id}:
+    post:
+      summary: Send message
+      tags: [Chat]
+      security: [ApiKeyAuth: []]
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema: {type: string}
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question: {type: string}
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  answer: {type: string}
+                  is_from_book: {type: boolean}
+                  sources: {type: array, items: {{type: object}}
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key

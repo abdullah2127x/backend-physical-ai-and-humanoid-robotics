@@ -5,6 +5,16 @@
 **Status**: Draft
 **Input**: User description: "create a specification with upper level detail we discuss and do not mention to techincal detail"
 
+## Clarifications
+
+### Session 2025-12-31
+
+- Q: LLM provider for general knowledge answers → A: LiteLLM with OpenRouter (unified multi-model interface, cost optimization, provider failover)
+- Q: Supported file types for ingestion → A: MD, MDX only (constitution: MD-focused, no PDF needed for current docs)
+- Q: Session persistence approach → A: Backend UUID sessions with 24-hour timeout; frontend stores session ID in localStorage for continuity
+- Q: Ingestion folder scanning approach → A: Recursive folder scan with relative paths from configured content root
+- Q: Embedding model and vector database → A: Cohere embed-english-v3.0 + Qdrant Cloud Free Tier
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Ask Question About Book Content (Priority: P1)
@@ -27,7 +37,7 @@ User reads a published book online and wants to ask a specific question about th
 
 ### User Story 2 - Ingest Book Content for Search (Priority: P1)
 
-Content authors or maintainers need to upload new or updated book documentation so that it becomes available for users to ask questions about. The system accepts a folder containing documentation files and processes them for search capability.
+Content authors or maintainers need to upload new or updated book documentation so that it becomes available for users to ask questions about. The system accepts a relative folder path from a configured content root, recursively scans all subdirectories, and processes MD/MDX files for search capability.
 
 **Why this priority**: Without this capability, users cannot ask questions about content. This is foundational to the entire feature.
 
@@ -77,7 +87,7 @@ User asks a question about the book content, but the specific information is not
 - **FR-002**: System MUST accept an optional content selection parameter to limit search scope to specific pages, chapters, or ranges
 - **FR-003**: System MUST retrieve and search only from ingested book content when answering questions
 - **FR-004**: System MUST process documentation folders and make content searchable
-- **FR-005**: System MUST automatically identify and process only supported file types from provided folders
+- **FR-005**: System MUST automatically identify and process only supported file types (MD, MDX) from provided folders
 - **FR-006**: System MUST maintain conversation history within a single user session
 - **FR-007**: System MUST distinguish between answers derived from book content versus general knowledge
 - **FR-008**: System MUST provide explicit disclaimer when answer uses information not found in the book
@@ -108,6 +118,12 @@ User asks a question about the book content, but the specific information is not
 - **SC-006**: Users can select content scope at any level (specific page, chapter, or all content) with equal responsiveness
 - **SC-007**: Ingestion process provides clear success/failure feedback within 10 seconds for folders up to 100 files
 
+### External Services
+
+- **LLM Provider**: LiteLLM with OpenRouter for general knowledge answers (enables multi-model access, cost optimization, and provider failover)
+- **Embedding Model**: Cohere embed-english-v3.0 for text-to-vector conversion
+- **Vector Database**: Qdrant Cloud Free Tier for storing and searching embeddings
+
 ### Non-Functional Requirements
 
 - **NFR-001**: System must handle at least 50 concurrent users asking questions without degradation in response quality
@@ -119,9 +135,9 @@ User asks a question about the book content, but the specific information is not
 ## Assumptions
 
 - Content selection is optional; if not provided, system searches all available content
-- Conversation history is session-based and lost when user refreshes their page
+- Conversation history uses backend UUID sessions with 24-hour timeout; frontend stores session ID in localStorage to maintain continuity across page refreshes
 - Ingestion processes files as they exist at the time of ingestion
-- System will automatically filter supported file types during ingestion
+- System will automatically filter supported file types (MD, MDX) during ingestion
 - Content scope selection can be any granularity from single page to entire book
 - General knowledge answers may be provided when book content is insufficient, with appropriate disclaimers
 - Session identifiers are generated and managed by the user interface for conversation continuity
