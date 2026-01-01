@@ -30,26 +30,21 @@ async def run_ingestion_task(report_id: UUID, request: IngestionRequest) -> None
     import structlog
 
     logger = structlog.get_logger(__name__)
-    from src.core.config import get_settings
 
     service = get_ingestion_service()
-    settings = get_settings()
 
-    # Resolve path relative to content root
-    content_root = settings.content_root
-    full_path = content_root / request.path
-
-    logger.info("Ingestion task starting", report_id=str(report_id), request_path=request.path, content_root=str(content_root), full_path=str(full_path), exists=full_path.exists())
+    logger.info("Ingestion task starting", report_id=str(report_id), request_path=request.path, source_type=request.source_type.value)
 
     try:
         await service.ingest(
-            source_path=str(full_path),
+            source_path=request.path,
+            source_type=request.source_type,
             recursive=request.recursive,
             clear_existing=request.clear_existing,
             report_id=report_id,
         )
     except Exception as e:
-        logger.error("Ingestion failed", error=str(e), full_path=str(full_path))
+        logger.error("Ingestion failed", error=str(e), source_path=request.path)
 
 
 @router.post(
@@ -82,8 +77,9 @@ async def start_ingestion(
         processed_files=0,
         status=DocumentStatus.PROCESSING,
     )
+    service._reports[report.id] = report
 
-    # Start ingestion in background
+    # Start ingestion in background using the task function
     task = asyncio.create_task(
         run_ingestion_task(report.id, request),
         name=f"ingestion-{report.id}",

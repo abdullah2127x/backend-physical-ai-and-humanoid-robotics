@@ -24,7 +24,10 @@ from src.ingestion.models import (
     IngestionError,
     IngestionErrorType,
     IngestionReport,
+    IngestionSourceType,
 )
+from src.crawler.sitemap import fetch_sitemap_urls
+from src.crawler.scraper import scrape_batch
 from src.ingestion.processors import get_processor
 from src.ingestion.validators import scan_directory
 from src.utils.chunking import get_chunker
@@ -56,6 +59,7 @@ class IngestionService:
     async def ingest(
         self,
         source_path: str,
+        source_type: IngestionSourceType = IngestionSourceType.DIRECTORY,
         recursive: bool = True,
         clear_existing: bool = False,
         report_id: Optional[UUID] = None,
@@ -64,8 +68,9 @@ class IngestionService:
         Run the full ingestion pipeline.
 
         Args:
-            source_path: Path to file or directory
-            recursive: Scan subdirectories
+            source_path: Path to file or directory OR URL to sitemap
+            source_type: Type of source (directory or sitemap)
+            recursive: Scan subdirectories (directory mode only)
             clear_existing: Clear Qdrant collection first
             report_id: Optional existing report ID to use/update
 
@@ -89,11 +94,6 @@ class IngestionService:
         start_time = time.time()
 
         try:
-            # Convert to Path
-            path = Path(source_path).resolve()
-            if not path.exists():
-                raise FileNotFoundError(f"Path not found: {source_path}")
-
             # Clear existing if requested
             if clear_existing:
                 logger.info("Clearing existing collection")
@@ -102,61 +102,13 @@ class IngestionService:
                 except Exception as e:
                     logger.warning("Failed to clear collection", error=str(e))
 
-            # Ensure collection exists (create if not)
-            try:
-                await self._qdrant.ensure_collection()
-            except Exception as e:
-                logger.warning("Failed to ensure collection", error=str(e))
+            # Ensure collection exists
+            await self._qdrant.ensure_collection()
 
-            # Scan for files
-            files = scan_directory(path, recursive=recursive)
-            report.total_files = len(files)
-            logger.info("Found files to ingest", count=len(files))
-
-            # Process files
-            all_chunks: list[Chunk] = []
-
-            for i, file_path in enumerate(files):
-                try:
-                    # Create document
-                    document = self._process_file(file_path, path)
-                    if document is None:
-                        report.skipped_files += 1
-                        continue
-
-                    # Extract content
-                    content = self._processor.process(document)
-
-                    # Create chunks
-                    chunks = self._create_chunks(document, content)
-                    all_chunks.extend(chunks)
-
-                    # Update report
-                    report.processed_files += 1
-                    report.total_chunks += len(chunks)
-
-                    # Log progress
-                    if (i + 1) % 10 == 0:
-                        logger.info(
-                            "Ingestion progress",
-                            processed=i + 1,
-                            total=len(files),
-                            chunks=len(all_chunks),
-                        )
-
-                except Exception as e:
-                    error = IngestionError(
-                        file_path=str(file_path),
-                        error_type=self._map_error_type(e),
-                        message=str(e),
-                    )
-                    report.add_error(error)
-                    logger.error("Failed to process file", path=str(file_path), error=str(e))
-
-            # Generate embeddings and store
-            if all_chunks:
-                logger.info("Generating embeddings", chunks=len(all_chunks))
-                await self._embed_and_store(all_chunks)
+            if source_type == IngestionSourceType.SITEMAP:
+                await self._ingest_sitemap(source_path, report)
+            else:
+                await self._ingest_directory(source_path, recursive, report)
 
             # Finalize report
             report.status = DocumentStatus.COMPLETED
@@ -167,9 +119,13 @@ class IngestionService:
             raise
 
         finally:
-            report.completed_at = time.time()
+            report.completed_at = datetime.utcnow()
 
-        duration = report.completed_at - report.started_at
+        start_ts = report.started_at
+        if hasattr(start_ts, "timestamp"):
+            start_ts = start_ts.timestamp()
+
+        duration = report.completed_at.timestamp() - start_ts
         logger.info(
             "Ingestion complete",
             files_processed=report.processed_files,
@@ -179,6 +135,75 @@ class IngestionService:
         )
 
         return report
+
+    async def _ingest_directory(self, source_path: str, recursive: bool, report: IngestionReport) -> None:
+        """Process files from a local directory."""
+        path = Path(source_path).resolve()
+        if not path.exists():
+            raise FileNotFoundError(f"Path not found: {source_path}")
+
+        files = scan_directory(path, recursive=recursive)
+        report.total_files = len(files)
+        logger.info("found_files_to_ingest", count=len(files))
+
+        for i, file_path in enumerate(files):
+            try:
+                document = self._process_file(file_path, path)
+                if document is None:
+                    report.skipped_files += 1
+                    continue
+
+                content = self._processor.process(document)
+                chunks = self._create_chunks(document, content)
+
+                if chunks:
+                    await self._embed_and_store(chunks)
+
+                report.processed_files += 1
+                report.total_chunks += len(chunks)
+
+                if (i + 1) % 5 == 0:
+                    logger.info("ingestion_progress", processed=i+1, total=len(files), chunks=report.total_chunks)
+            except Exception as e:
+                report.add_error(IngestionError(file_path=str(file_path), error_type=self._map_error_type(e), message=str(e)))
+
+    async def _ingest_sitemap(self, sitemap_url: str, report: IngestionReport) -> None:
+        """Process content from a sitemap.xml."""
+        logger.info("fetching_sitemap", url=sitemap_url)
+        urls = await fetch_sitemap_urls(sitemap_url)
+        report.total_files = len(urls)
+        logger.info("found_urls_to_scrape", count=len(urls))
+
+        # Process in batches of 5 to avoid overloading
+        for i in range(0, len(urls), 5):
+            batch_urls = urls[i:i+5]
+            scraped_data = await scrape_batch(batch_urls)
+
+            for url, content in scraped_data.items():
+                try:
+                    # Create a virtual document for the URL
+                    source_id = url.split("/")[-1] or "index"
+                    doc_id = uuid4()
+
+                    # Create chunks directly for the scraped text
+                    chunk_texts = list(self._chunker.chunk_text(content))
+                    chunks = []
+                    for idx, text in enumerate(chunk_texts):
+                        chunks.append(Chunk(
+                            id=uuid4(), document_id=doc_id, source_id=source_id,
+                            text=text, chunk_index=idx, total_chunks=len(chunk_texts),
+                            metadata={"url": url, "source_type": "sitemap"}
+                        ))
+
+                    if chunks:
+                        await self._embed_and_store(chunks)
+
+                    report.processed_files += 1
+                    report.total_chunks += len(chunks)
+                except Exception as e:
+                    report.add_error(IngestionError(file_path=url, error_type=self._map_error_type(e), message=str(e)))
+
+            logger.info("sitemap_progress", processed=min(i+5, len(urls)), total=len(urls), chunks=report.total_chunks)
 
     def _process_file(self, file_path: Path, content_root: Path) -> Optional[Document]:
         """Process a single file into a Document."""
@@ -249,6 +274,10 @@ class IngestionService:
     async def _embed_and_store(self, chunks: list[Chunk]) -> None:
         """Generate embeddings and store in Qdrant."""
         from qdrant_client.models import PointStruct
+
+        # Ensure we are connected to Qdrant
+        if self._qdrant._client is None:
+            await self._qdrant.connect()
 
         # Extract texts for embedding
         texts = [chunk.text for chunk in chunks]

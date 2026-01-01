@@ -205,21 +205,32 @@ class IngestionReport(BaseModel):
         }
 
 
+class IngestionSourceType(str, Enum):
+    """Supported source types for ingestion."""
+
+    DIRECTORY = "directory"
+    SITEMAP = "sitemap"
+
+
 class IngestionRequest(BaseModel):
     """
     Request to start ingestion.
 
-    Specifies the path to ingest.
+    Specifies the source to ingest.
     """
 
+    source_type: IngestionSourceType = Field(
+        default=IngestionSourceType.DIRECTORY,
+        description="Type of source to ingest (directory or sitemap)",
+    )
     path: str = Field(
         ...,
-        description="Path to file or directory to ingest",
+        description="Path to file/directory OR URL to sitemap.xml",
         json_schema_extra={"example": "./content/chapters"},
     )
     recursive: bool = Field(
         default=True,
-        description="Recursively process subdirectories",
+        description="Recursively process subdirectories (for directory source only)",
     )
     file_types: list[FileType] = Field(
         default=[FileType.MARKDOWN, FileType.MARKDOWNX, FileType.TEXT],
