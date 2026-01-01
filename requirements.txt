@@ -13,6 +13,8 @@ litellm>=1.44.0
 httpx>=0.28.0
 structlog>=25.0.0
 python-multipart>=0.0.20
+beautifulsoup4>=4.12.0
+requests>=2.31.0
 
 # Development dependencies
 pytest>=8.3.0
